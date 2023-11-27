@@ -13,7 +13,6 @@ import pickle
 import os
 import time
 import numpy as np
-import dask.dataframe as dd
 
 
 # Goal: Prune dataset of texts that are not high quality
@@ -31,7 +30,6 @@ tokenizer = AutoTokenizer.from_pretrained('intfloat/e5-large-v2')
 model = AutoModel.from_pretrained('intfloat/e5-large-v2').to(device)
 kmeans = MiniBatchKMeans(n_clusters=NUM_OF_CLUSTERS, n_init=10, max_iter=1000)
 scores = dict()
-all_data = dd.read_parquet("./raw_data")
 
 def random_slice(input_string, max_length=500):
     if len(input_string) <= max_length:
@@ -51,24 +49,21 @@ def average_pool(last_hidden_states: Tensor,
 def get_embeddings(df: pd.DataFrame, limit_samples = None, BATCH_SIZE = 1):
     
     all_embeddings = []
-    all_embeddings_df = dd.DataFrame.from_dict({'text': [], 'embeddings': []})
-    print(all_data)
-    print(all_data.size)
+
     # Make column in all_data with None values 
     # to be filled with embeddings
-    all_data['embeddings'] = None
-    for idx, eachText in all_data.iterrows():
-        list_of_text = [eachText['text']]
-        for i, eachText in enumerate(list_of_text):
-            list_of_text[i] = "query: " + eachText
 
-        batch_dict = tokenizer(list_of_text, 
+    for idx, eachText in df.iterrows():
+
+        formatted_text = "query: " + eachText['text']
+
+        batch_dict = tokenizer(formatted_text, 
                             max_length=512, padding=True, truncation=True, 
                             return_tensors='pt').to(device)
         outputs = model(**batch_dict)
         embeddings = F.normalize(average_pool(outputs.last_hidden_state, batch_dict['attention_mask']), p=2, dim=1).cpu()
         all_embeddings.append(embeddings.detach())
-        all_embeddings_df.append({"text": list_of_text[0], "embeddings": embeddings.detach()})
+        # all_embeddings_df.append({"text": list_of_text[0], "embeddings": embeddings.detach()})
         del outputs, embeddings, batch_dict
         torch.cuda.empty_cache()
 
@@ -91,12 +86,6 @@ def fit_kmeans(embeddings: Tensor):
 def predict_kmeans(embeddings: Tensor):
     print(kmeans.labels_.size)
     labels = kmeans.predict(embeddings)
-    # all_distances = kmeans.transform(embeddings)
-    # distances = []
-    # for idx, eachLabel in enumerate(labels):
-    #     distances.append(all_distances.tolist()[idx][eachLabel])
-    
-    # distances = pairwise_distances_argmin_min(embeddings, kmeans.cluster_centers_)[0].tolist()
     distances = np.linalg.norm(embeddings - kmeans.cluster_centers_[kmeans.labels_], axis=1).tolist()
 
     return labels, distances
@@ -196,10 +185,8 @@ def prune_dataset(df: pd.DataFrame, labels: list):
 def collect_embeddings():
     for eachFile in os.listdir("./raw_data"):
         if eachFile.endswith('.parquet'):
-            # df = pd.read_parquet('raw_data/' + eachFile, engine='pyarrow')
-            # shuffled_df = df.sample(frac=1, random_state=42)
-            shuffled_df = None
-            embeddings = get_embeddings(shuffled_df, limit_samples=1000)
+            df = pd.read_parquet('raw_data/' + eachFile, engine='pyarrow')
+            embeddings = get_embeddings(df, limit_samples=1000)
             torch.save(embeddings, 'embeddings/' + eachFile.split(".parquet")[0] + '_embeddings.npy')
 
 # finds the min and max distances for each cluster and saves the text to a file
@@ -214,11 +201,11 @@ def find_min_max_distances():
     # this could probably be more efficient. my python skills are not the best xD
     for idx, eachFile in enumerate(raw_data_files):
         df = pd.read_parquet('raw_data/' + eachFile, engine='pyarrow')
-        with open("./embeddings/labels/" + eachFile.split(".parquet")[0] + "_labels.txt", "r") as f:
+        with open("./embeddings/labels/" + eachFile.split(".parquet")[0] + "_embeddings.npy_labels.txt", "r") as f:
             labels = f.read().split("[")[1].split("]")[0].split(", ")
             labels = [int(eachLabel) for eachLabel in labels]
             f.close()
-        with open("./embeddings/distances/" + eachFile.split(".parquet")[0] + "_distances.txt", "r") as f:
+        with open("./embeddings/distances/" + eachFile.split(".parquet")[0] + "_embeddings.npy_distances.txt", "r") as f:
             distances = f.read().split("[")[1].split("]")[0].split(", ")
             distances = [float(eachDist) for eachDist in distances]
             f.close()
@@ -250,17 +237,17 @@ def find_min_max_distances():
             f.close()
         
 def find_clusters():
-    df = dd.read_parquet("./raw_data")
-    print(df.head())
+
     # iterates through embeddings to fit kmeans model
     for eachEmbedding in os.listdir("./embeddings"):
-        if eachEmbedding.endswith('.pt'):
+        if eachEmbedding.endswith('.npy'):
             embeddings = torch.load("./embeddings/" + eachEmbedding)
             fit_kmeans(embeddings)
+
     # iterates through embeddings to predict labels and distances
     for eachEmbedding in os.listdir("./embeddings"):
         
-        if eachEmbedding.endswith('.pt'):
+        if eachEmbedding.endswith('.npy'):
             embeddings = torch.load("./embeddings/" + eachEmbedding)
             labels, distances = predict_kmeans(embeddings)
             with open("./embeddings/labels/" + eachEmbedding.split("_embeddings.pt")[0] + "_labels.txt", "w") as f:
@@ -281,6 +268,6 @@ def final(df, labels):
 
 collect_embeddings()
 find_clusters()
-# find_min_max_distances()
+find_min_max_distances()
 
 
