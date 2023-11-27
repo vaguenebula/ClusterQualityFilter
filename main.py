@@ -93,6 +93,8 @@ def predict_kmeans(embeddings: Tensor):
 
 def calculate_relative_std_dev_and_mean(data, cluster):
 
+    # cluster = cluster.split("_max_distances")[0]
+    # cluster = cluster.split("_min_distances")[0]
     if not data:
         return None, None
 
@@ -106,8 +108,8 @@ def calculate_relative_std_dev_and_mean(data, cluster):
 def evaluate_lines(lines: list, cluster: int) -> float:
     import openai
 
-    openai.api_key = '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'
-    scores = []
+    openai.api_key = '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'
+    scores_list = []
 
     for eachLine in lines:            
         try:
@@ -115,13 +117,13 @@ def evaluate_lines(lines: list, cluster: int) -> float:
                 chat_completion = openai.ChatCompletion.create(model="gpt-4", 
                                                             messages=[{"role": "user", "content": f"""You are assigned the task of rating the quality of text data that will be used to train a large language model based on several metrics: high coherence, low repetition, and low noise. Your ratings will then be used to prune a dataset of data that reduces the performance of the model. Please be very strict with your rating.  Only respond with a value between 0 and 1, 1 being the highest possible quality data and 0 being the lowest. 
 Data: {random_slice(eachLine)}"""}])
-            scores.append(float(chat_completion.choices[0].message.content))
+            scores_list.append(float(chat_completion.choices[0].message.content))
         except Exception as e:
             print(e)
             print(chat_completion.choices[0].message.content)
             continue
 
-    calculate_relative_std_dev_and_mean(scores, cluster)
+    calculate_relative_std_dev_and_mean(scores_list, cluster)
     print("Average for cluster ", cluster, ": ", scores[cluster][0])
 
 
@@ -134,9 +136,9 @@ def evaluate_clusters(sample_limit: int) -> dict:
 
     threads = []
 
-    for filename in os.listdir("./text_quality"):
+    for filename in os.listdir("./embeddings/min_max_distances"):
         if filename.endswith('.txt'):
-            file_path = os.path.join("./text_quality", filename)
+            file_path = os.path.join("./embeddings/min_max_distances", filename)
             with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.read().split("\n\n\n")[:sample_limit]
                 f.close()
@@ -167,7 +169,8 @@ def prune_dataset(df: pd.DataFrame, labels: list):
     # Parse scores from file
     with open('cluster_scores.txt', 'r') as f:
         for line in f:
-            cluster_number = line.split(':')[0].strip()
+            cluster_number = line.split(':')[0].split("_max_distances")[0].split("_min_distances")[0].strip()
+            print(cluster_number)
             scores_dict[cluster_number] = (float(line.split(':')[1].strip().split(',')[0][1:]), 
                                            float(line.split(':')[1].strip().split(',')[1][:-1]))
     # Prune dataset
@@ -257,17 +260,29 @@ def find_clusters():
                 f.write(str(distances))
                 f.close()
 
-def final(df, labels):
+def final():
+    raw_data_files = [i for i in os.listdir("./raw_data") if i.endswith('.parquet')]
+    label_files = [i for i in os.listdir("./embeddings/labels") if i.endswith('.txt')]
+    
     # (Also saves min and max distances for gpt-4 to evaluate)
-    scores = evaluate_clusters(sample_limit=5)
-    prune_dataset(df, labels, scores)
+    # evaluate_clusters(sample_limit=5)
+    for eachFile in label_files:
+        labels = []
+        with open("./embeddings/labels/" + eachFile, "r") as f:
+            labels = f.read().split("[")[1].split("]")[0].split(", ")
+            labels = [int(eachLabel) for eachLabel in labels]
+            f.close()
+        for eachData in raw_data_files:
+            if eachFile.split("_embeddings.npy")[0] == eachData.split(".parquet")[0]:
+                df = pd.read_parquet('raw_data/' + eachData, engine='pyarrow')
+                prune_dataset(df, labels)
     model_filename = './kmeans_model.pkl'
     with open(model_filename, 'wb') as model_file:
         pickle.dump(kmeans, model_file)
 
 
-collect_embeddings()
-find_clusters()
-find_min_max_distances()
-
+# collect_embeddings()
+# find_clusters()
+# find_min_max_distances()
+final()
 
