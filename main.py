@@ -212,15 +212,15 @@ def get_tfidf(df, limit_samples=None):
 # Collects embeddings from raw data folder and saves them to a file
 def collect_embeddings():
 
-    # for eachFile in os.listdir("./raw_data"):
-    #     if eachFile.endswith('.parquet'):
-    #         df = pd.read_parquet('raw_data/' + eachFile, engine='pyarrow')
+    for eachFile in os.listdir("./raw_data"):
+        if eachFile.endswith('.parquet'):
+            df = pd.read_parquet('raw_data/' + eachFile, engine='pyarrow')
 
-    #         embeddings = get_bert(df, limit_samples=100)
-    #         torch.save(embeddings, 'embeddings/bert_embeddings/' + eachFile.split(".parquet")[0] + '.npy')
+            embeddings = get_bert(df, limit_samples=100)
+            torch.save(embeddings, 'embeddings/bert_embeddings/' + eachFile.split(".parquet")[0] + '.npy')
 
-    #         embeddings = get_tfidf(df, limit_samples=100)
-    #         torch.save(embeddings, 'embeddings/tf_embeddings/' + eachFile.split(".parquet")[0] + '.npy')
+            embeddings = get_tfidf(df, limit_samples=100)
+            torch.save(embeddings, 'embeddings/tf_embeddings/' + eachFile.split(".parquet")[0] + '.npy')
 
     # Combine corresponding emboddings from each directory containing embeddings
     for eachFile in os.listdir("./embeddings/bert_embeddings"):
